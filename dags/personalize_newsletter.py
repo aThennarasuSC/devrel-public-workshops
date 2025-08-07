@@ -115,14 +115,13 @@ def personalize_newsletter():
         # Debug logging (optional)
         context["ti"].log.info(f"triggering_asset_events: {context['triggering_asset_events']}")
 
-        # Safely get run_date from triggering asset events
+        # Safely get run_date from triggering asset events or fallback to DAG run date
         triggering_events = context["triggering_asset_events"].get(Asset("selected_quotes"), [])
-        if not triggering_events:
-            raise ValueError("No triggering asset events found for selected_quotes")
-
-        run_date = triggering_events[0].extra.get("run_date")
-        if not run_date:
-            raise ValueError("Run date not found in asset event metadata")
+        if triggering_events and triggering_events[0].extra.get("run_date"):
+            run_date = triggering_events[0].extra["run_date"]
+        else:
+            # fallback to DAG run date (str) in format YYYY-MM-DD
+            run_date = context.get("ds") or context["dag_run"].logical_date.strftime("%Y-%m-%d")
 
         id_ = user["id"]
         name = user["name"]
