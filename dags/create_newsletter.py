@@ -14,16 +14,6 @@ OBJECT_STORAGE_PATH_NEWSLETTER = os.getenv(
 
 
 
-
-
-
-
-
-
-
-
-
-
 @asset(schedule="@daily")
 def raw_zen_quotes(context: dict):
     """
@@ -71,7 +61,7 @@ def selected_quotes(context: dict):
     run_date = context["triggering_asset_events"][Asset("raw_zen_quotes")][0].extra[
         "run_date"
     ]
-
+    @asset(schedule=[selected_quotes])
    def create_newsletter(newsletter_data):
 
    """
