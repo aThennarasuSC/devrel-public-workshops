@@ -18,8 +18,11 @@ def raw_zen_quotes(context: dict):
     """
     Extracts a random set of quotes.
     """
-    r = requests.get("https://zenquotes.io/api/quotes/random")
+    r = requests.get("https://zenquotes.io/api/quotes/random")  # This only returns one quote!
     quotes = r.json()
+
+    if not isinstance(quotes, list) or len(quotes) < 3:
+        raise ValueError(f"Expected multiple quotes but got: {quotes}")
 
     run_date = context["dag_run"].logical_date.strftime("%Y-%m-%d")
     yield Metadata(Asset("raw_zen_quotes"), {"run_date": run_date})
@@ -30,6 +33,7 @@ def raw_zen_quotes(context: dict):
 def selected_quotes(context: dict):
     """
     Transforms the extracted raw_zen_quotes.
+    Selects a short, median, and long quote based on character count.
     """
     raw_zen_quotes = context["ti"].xcom_pull(
         dag_id="raw_zen_quotes",
@@ -38,14 +42,26 @@ def selected_quotes(context: dict):
         include_prior_dates=True,
     )
 
-    quotes_character_counts = [int(quote["c"]) for quote in raw_zen_quotes]
+    if not raw_zen_quotes or len(raw_zen_quotes) < 3:
+        raise ValueError("Need at least 3 quotes to build the newsletter.")
+
+    quotes_character_counts = [int(q["c"]) for q in raw_zen_quotes]
     median = np.median(quotes_character_counts)
 
-    median_quote = min(raw_zen_quotes, key=lambda quote: abs(int(quote["c"]) - median))
+    # Median quote: closest to median character count
+    median_quote = min(raw_zen_quotes, key=lambda q: abs(int(q["c"]) - median))
     raw_zen_quotes.remove(median_quote)
 
-    short_quote = next(quote for quote in raw_zen_quotes if int(quote["c"]) < median)
-    long_quote = next(quote for quote in raw_zen_quotes if int(quote["c"]) > median)
+    short_quotes = [q for q in raw_zen_quotes if int(q["c"]) < median]
+    long_quotes = [q for q in raw_zen_quotes if int(q["c"]) > median]
+
+    if not short_quotes or not long_quotes:
+        raise ValueError(
+            f"Not enough variety of quote lengths. short={len(short_quotes)}, long={len(long_quotes)}"
+        )
+
+    short_quote = short_quotes[0]
+    long_quote = long_quotes[0]
 
     run_date = context["triggering_asset_events"][Asset("raw_zen_quotes")][0].extra[
         "run_date"
@@ -76,11 +92,17 @@ def formatted_newsletter(context: dict):
         include_prior_dates=True,
     )
 
+    if not selected_quotes:
+        raise ValueError("selected_quotes returned no data")
+
     run_date = context["triggering_asset_events"][Asset("selected_quotes")][0].extra[
         "run_date"
     ]
 
     newsletter_template_path = object_storage_path / "newsletter_template.txt"
+    if not newsletter_template_path.exists():
+        raise FileNotFoundError(f"Newsletter template not found at {newsletter_template_path}")
+
     newsletter_template = newsletter_template_path.read_text()
 
     newsletter = newsletter_template.format(
