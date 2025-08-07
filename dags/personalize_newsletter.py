@@ -126,10 +126,14 @@ def personalize_newsletter():
         from airflow.sdk import ObjectStoragePath
 
         # fetch the run date of the pipeline from the triggering asset event
-        run_date = (
-            context["triggering_asset_events"][Asset("formatted_newsletter")][0]
-            .extra["run_date"]
-        )
+    triggering_events = context["triggering_asset_events"].get(Asset("selected_quotes"), [])
+    if not triggering_events:
+        # fallback or raise error to avoid IndexError
+        raise ValueError("No triggering asset events found for selected_quotes")
+    
+    run_date = triggering_events[0].extra.get("run_date")
+    if not run_date:
+        raise ValueError("Run date not found in asset event metadata")
 
         id = user["id"]
         name = user["name"]
